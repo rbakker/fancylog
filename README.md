@@ -6,7 +6,9 @@ use:
 import fancylog
 
 logId = fancylog.addstep(workdir, ...)
+(... do some processing ...)
 fancylog.attachdata(workdir,logId, ...)
+
 
 This will put log entries in the file
 workdir/log_instance.js

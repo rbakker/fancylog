@@ -37,6 +37,16 @@ def _donotattach(catg,force,logId):
   global _dolog
   return logId is None or (not _dolog[catg] and not force)
 
+
+# initialize the log, should be called once before using fancylog.
+def initlog(workdir)
+  prepdir(workdir)
+  logfile = op.join(workdir,'log_instance.js')
+  print 'Create new LOG file "'+logfile+'"'
+  with open(logfile, "w") as log:
+    log.write('log=[];\n\n') 
+
+
 # Add a processing step to the logfile, without executing it
 def addstep(workdir, parentCmd,cmd,opts, title=None,force=False):
   if not force and not _dolog['step']: return None

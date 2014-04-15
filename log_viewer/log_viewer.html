@@ -1,0 +1,239 @@
+<html>
+<head>
+<style>
+body,td,input {
+  font-family: trebuchet MS, arial, helvetica, sans-serif;
+  font-size: 14px;
+}
+
+table.cmd { border-collapse: collapse }
+table.cmd th { border: 1px solid #088; text-align: left }
+table.cmd td { border: 1px solid #088 }
+
+ol { counter-reset: item }
+li { display: block }
+h3:before { content: counters(item, ".") " "; counter-increment: item }
+div.toggle-open,div.toggle-closed { font-weight: bold; color: #00D; float:left; width:3ex }
+div.toggle-disabled { display: none }
+div.content-closed { display: none }
+
+#ERROR_CONSOLE { padding:10px; background:#a00; color:#fff; display:none }
+div.result { border-left: 10px solid #fa0; padding-left:4px }
+</style>
+<script style="text/javascript" src="log_instance.js"></script>
+<script style="text/javascript" src="json.js"></script>
+<script style="text/javascript">
+
+function escapeHtml(text) {
+  return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+}
+
+function toggleHtml(status) {
+  if (status=='open') return '[&ndash;]';
+  if (status=='closed') return '[+]';
+  return '[&nbsp;]';
+}
+
+function doToggle(elem) {
+  status = 'disabled';
+  contentElem = elem.parentNode.children[2];
+  if (contentElem) {
+    status = elem.className.substr(7);
+    status = (status=='open' ? 'closed' : 'open');
+    elem.className = 'toggle-'+status;
+    contentElem.className = 'content-'+status;
+  }
+  elem.innerHTML = toggleHtml(status);
+}
+
+var XTK_SCENES = {};
+function xtkSceneAdd(scene,title) {
+  scene.title = title;
+  XTK_SCENES[scene.file] = scene;
+}
+
+function xtkSceneOptions(scene0) {
+  var ans = ['<option value="-">[nothing]'];
+  var dims0 = scene0.dims.join('x');
+  for (var k in XTK_SCENES) {
+    var scene = XTK_SCENES[k];
+    var dims = scene.dims.join('x');
+    if (dims == dims0 && scene.file != scene0.file) {
+      slashpos = k.lastIndexOf('/');
+      ans.push('<option value="'+k+'">['+k.substr(slashpos+1)+']: '+scene.title);
+    }
+  }
+  return ans.join('</option>')+'</option>';
+}
+
+function xtkSceneLink(scan,label,map,title) {
+  return 'xtk_viewer.html?scan='+scan+(label ? '&label='+label : '')+(map ? '&map='+map : '')+'&title='+title;
+}
+
+function xtkSceneOpen(scanFile,labelFile) {
+  var scanScene = XTK_SCENES[scanFile];
+  var labelScene = XTK_SCENES[labelFile];
+  var scan = scanScene.file;
+  var label = labelScene.file;
+  var map = labelScene.colormap;
+  title = scanScene.title+' plus '+labelScene.title;
+  window.open(xtkSceneLink(scan,label,map,title),'XTK_VIEWER');
+}
+
+function genTable(th,rows,className) {
+  tr = [th];
+  for (var i in rows) {
+    r = rows[i];
+    if (typeof r == 'string') {
+      tr.push('<td colspan="2">'+escapeHtml(r)+'</td>');
+    } else {
+      tr.push('<td>'+r[0]+'</td><td>'+escapeHtml(r[1])+'</td>');
+    }
+  }
+  return '<table class="'+className+'"><tr>'+tr.join('</tr><tr>')+'</tr></table>';
+}
+
+function stepHtml(step,tagName,level) {
+  if (!level) level = 0;
+  if (!tagName) tagName = 'h3';
+  var title = step.title;
+  var defines = step.defines;
+  var cmd = step.cmd;
+  var opts = step.opts;
+  var steps = step.steps;
+  var result = step.result;
+  var scenes = step.xtk_scenes;
+//  var th = '<td colspan=2><b>'+cmd+'</b> <a onclick="var el=document.getElementById(\'manpage_cmd\');el.innerHTML=\''+cmd+'\';el.scrollIntoView()" target="MANPAGE_IFRAME" href="./manpages/manpage_'+cmd.replace(/[^\w\d]/,'_')+'.txt">man page</a></td>';
+  var th = '<td colspan=2><b>'+cmd+'</b></td>';
+  var status = 'disabled';
+  if (level>0) status = 'open';
+  if (level>3) status = 'closed';
+  var toggleMe = '<div class="toggle-'+status+'" onclick="javascript:doToggle(this)">'+toggleHtml(status)+'&nbsp;</div>';
+  var startContent = '<div class="content-'+status+'">';
+  var endContent = '</div>';
+  var ans = toggleMe+'<'+tagName+'>'+title+'</'+tagName+'>'+startContent+genTable(th,opts,'cmd');
+  for (var name in result) {
+    ans += '<div class="result">';
+    break;
+  }    
+  for (var name in result) {
+    tp = result[name].type;
+    val = result[name].value;
+    ans += '<b>'+name+'</b><div>';
+    if (tp == 'obj') {
+      val = json_pretty(val);
+      tp = 'text';
+    }
+    if (tp == 'opts') {
+      ans += genTable('',val,'cmd');
+    } else if (tp == 'file') {
+      ans += '<a href="'+val+'">file link</a>';
+    } else if (tp == 'time') {
+      ans += 'Started '+step.timestamp+', duration '+val+'</a>';
+    } else if (tp == 'text') {
+      ans += '<pre>'+escapeHtml(val)+'</pre>';
+    } else if (tp == 'nifti') {
+      var scan = val.file;
+      var label = undefined;
+      var map = undefined;
+      if (val.colormap) { scan=undefined; label=val.file; map=val.colormap }
+      ans += 'Open '+val.dims.join('x')+' '+val.dtype+' image <a target="XTK_VIEWER" href="'+xtkSceneLink(scan,label,map,name)+'">'+val.file+'</a> directly in XTK-viewer window';
+      ans += '<br/>Combine with label-image: <select onchange="xtkSceneOpen(\''+val.file+'\',this.options[this.selectedIndex].value)" id="xtk:'+val.file+'">'+xtkSceneOptions(val)+'</select>';
+    } else {
+      ans += val;
+    }
+    ans += '</div>';
+  }
+  for (var name in result) {
+    ans += '</div>';
+    break;
+  }    
+  if (steps) {
+    var li = [];
+    for (var k in steps) {
+      li.push(stepHtml(steps[k],'h3',level+1));
+    }
+//<span onclick="alert(this.children[0].tagName);s=this.children[0].style;alert(s.display);s.display=(s.display==\'none\'?\'block\':\'none\')">
+    ans += '<ol style="display:block"><li>'+li.join('</li><li>')+'</li></span></ol>';
+  }
+  ans += endContent;
+  return ans;
+}
+
+function log2tree(pipeline) {
+  /*
+   * The parent node is defined as the last node with the given parentCmd
+   * The only scenario in which this fails is when a command calls
+   * itself more than once.
+   */
+  var cmd2node = {};
+  var id2node = {};
+  // prepare cmd2node, for the case that a child is defined before its parent
+  for (var k=0; k<pipeline.length; k++) {
+    nd = pipeline[k];
+    var cmd = nd.cmd;
+    var id = nd.id;
+    if (cmd != undefined) {
+      cmd2node[cmd] = k;
+      id2node[id] = k;
+      nd.result = {};
+      nd.steps = [];
+    }
+  }
+  for (var k=0; k<pipeline.length; k++) {
+    nd = pipeline[k];
+    var cmd = nd.cmd;
+    if (cmd != undefined) {
+      cmd2node[cmd] = k; // most recent occurrence of node k
+      //nd.steps = [];
+      var pa = nd.parentCmd;
+      if (pa) {
+        if (cmd2node[pa] != undefined) {
+          // this should build the tree, given that javascript stores objects as pointers
+          pipeline[cmd2node[pa]].steps.push(nd);
+        } else {
+          throw 'unserialize: parent '+pa+' not defined.';
+        }
+      } else {
+        if (k !== 0) {
+          throw 'unserialize: undefined parent for node '+k+' with cmd '+cmd;
+        }
+      }
+    } else {
+      nd0 = pipeline[id2node[nd.attachTo]];
+      if (nd0 != undefined) {
+        nd0.result[nd.name] = { 'type': nd.type,'value':nd.result }
+        // collect files to create xtk scenes
+        if (nd.type == 'nifti') xtkSceneAdd(nd.result,nd.name);
+      }
+    }
+  }
+  return pipeline[0];
+}
+
+function mainHtml(log) {
+  try {
+    var logTree = log2tree(log);
+    return stepHtml(logTree,'h2');
+  } catch(err) {
+    var elem = document.getElementById('ERROR_CONSOLE');
+    elem.innerHTML += err+'<br/>';
+    elem.style.display = "block";
+  }
+}
+
+</script>
+</head>
+<body onload="document.getElementById('main').innerHTML = mainHtml(log)">
+<div id="ERROR_CONSOLE">ERROR CONSOLE<br/></div>
+<div id="main"></div>
+<!==h2 id="manpage_title">Man page for command "<span id="manpage_cmd"></span>"</h2>
+<iframe id="MANPAGE_IFRAME" name="MANPAGE_IFRAME" src="./manpages/index.html" width="100%" height="50%"></iframe>
+</body-->
+</html>
+
